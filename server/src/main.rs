@@ -19,6 +19,7 @@ fn main() -> std::io::Result<()> {
         let mut stream_write = stream_write?;
         let mut stream_read = stream_read?;
         stream_write.read_to_string(&mut input).unwrap();
+        dbg!(&input);
         let mut process = Command::new("fish")
             .arg("-c")
             .arg(&input)
