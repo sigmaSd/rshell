@@ -13,13 +13,56 @@ fn main() -> std::io::Result<()> {
     let mut stdout_buf = [0; 512];
     let mut stderr_buf = [0; 512];
     // accept connections and process them serially
-    for mut stream in &listener.incoming().chunks(2) {
+    let listener = listener.incoming().chunks(2);
+    let mut listener = listener.into_iter();
+    loop {
+        let mut stream = match listener.next() {
+            Some(s) => s,
+            None => break Ok(()),
+        };
         let stream_write = stream.next().unwrap();
         let stream_read = stream.next().unwrap();
         let mut stream_write = stream_write?;
         let mut stream_read = stream_read?;
         stream_write.read_to_string(&mut input).unwrap();
+
         dbg!(&input);
+        if input.starts_with("cd") {
+            let dir = input.split_whitespace().nth(1);
+            if let Some(dir) = dir {
+                std::env::set_current_dir(dir).unwrap();
+            }
+            input.clear();
+            continue;
+        } else if input.starts_with("vim") {
+            let file = input.strip_prefix("vim").unwrap();
+            let file_name = std::path::Path::new(file)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
+            let data = Command::new("fish")
+                .arg("-c")
+                .arg("cat".to_owned() + &file)
+                .output()?
+                .stdout;
+            stream_read.write_all(b"?vim")?;
+            stream_read.flush()?;
+            stream_read.write_all(file_name.as_bytes())?;
+            stream_read.write_all(b"???")?;
+            stream_read.write_all(&data)?;
+            drop(stream_read);
+            // get result
+            let mut stream = listener.next().unwrap();
+            let mut stream_write = stream.next().unwrap()?;
+            let _stream_read = stream.next().unwrap()?;
+            let mut client_data = String::new();
+            stream_write.read_to_string(&mut client_data)?;
+            std::fs::write(&file.trim(), client_data)?;
+            input.clear();
+            continue;
+        }
         let mut process = Command::new("fish")
             .arg("-c")
             .arg(&input)
@@ -46,5 +89,4 @@ fn main() -> std::io::Result<()> {
 
         input.clear();
     }
-    Ok(())
 }
