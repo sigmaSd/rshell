@@ -10,7 +10,27 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
     let listener = TcpListener::bind("0.0.0.0:0")?;
-    dbg!(&listener);
+    println!("server listener: {}", listener.local_addr()?);
+
+    let sig_listener = TcpListener::bind("0.0.0.0:0")?;
+    println!("signal listener: {}", sig_listener.local_addr()?);
+    std::thread::spawn(move || -> std::io::Result<()> {
+        for sig in sig_listener.incoming() {
+            let mut sig = sig?;
+            loop {
+                let n = sig.read(&mut [0; 1])?;
+                if n == 0 {
+                    break;
+                }
+                Command::new("fish")
+                    .arg("-c")
+                    .arg("pkill -2  fish")
+                    .spawn()?
+                    .wait()?;
+            }
+        }
+        Ok(())
+    });
 
     let mut input = String::new();
     let mut out_buf = [0; 512];
