@@ -13,8 +13,7 @@ fn main() -> Result<()> {
     dbg!(&listener);
 
     let mut input = String::new();
-    let mut stdout_buf = [0; 512];
-    let mut stderr_buf = [0; 512];
+    let mut out_buf = [0; 512];
     // accept connections and process them serially
     let listener = listener.incoming().chunks(2);
     let mut listener = listener.into_iter();
@@ -69,19 +68,17 @@ fn main() -> Result<()> {
             let mut stdout = process.stdout.take().expect("stdout is piped");
             let mut stderr = process.stderr.take().expect("stderr is piped");
 
-            let mut read_process_and_write_to_stream = || -> std::io::Result<bool> {
-                let stdout_n = stdout.read(&mut stdout_buf)?;
-                let stderr_n = stderr.read(&mut stderr_buf)?;
-                if stdout_n != 0 {
-                    stream_read.write_all(&stdout_buf[..stdout_n])?;
-                }
-                if stderr_n != 0 {
-                    stream_read.write_all(&stderr_buf[..stderr_n])?;
-                }
-                Ok(stdout_n == 0 && stderr_n == 0)
-            };
+            let mut read_process_and_write_to_stream =
+                |out: &mut dyn Read| -> std::io::Result<bool> {
+                    let out_n = out.read(&mut out_buf)?;
+                    if out_n != 0 {
+                        stream_read.write_all(&out_buf[..out_n])?;
+                    }
+                    Ok(out_n == 0)
+                };
 
-            while let Ok(false) = read_process_and_write_to_stream() {}
+            while let Ok(false) = read_process_and_write_to_stream(&mut stdout) {}
+            while let Ok(false) = read_process_and_write_to_stream(&mut stderr) {}
         }
 
         input.clear();
