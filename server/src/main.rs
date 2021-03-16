@@ -2,6 +2,7 @@ use itertools::Itertools;
 use std::{
     io::{Read, Write},
     net::TcpListener,
+    path::Path,
     process::{Command, Stdio},
 };
 
@@ -33,16 +34,15 @@ fn main() -> Result<()> {
         if input.starts_with("cd") {
             let dir = input.split_whitespace().nth(1);
             if let Some(dir) = dir {
-                std::env::set_current_dir(dir).unwrap();
+                std::env::set_current_dir(dir)?;
             }
         } else if input.starts_with("vim") {
-            let file = input.strip_prefix("vim").unwrap();
-            let file_name = std::path::Path::new(file)
+            let file = Path::new(input.strip_prefix("vim").expect("already checked").trim());
+            let file_name = file
                 .file_name()
-                .unwrap()
+                .ok_or("Could not read filename")?
                 .to_str()
-                .unwrap()
-                .to_owned();
+                .ok_or("Could not read filename")?;
             let data = std::fs::read_to_string(&file).unwrap_or_default();
             stream_read.write_all(b"?vim")?;
             stream_read.flush()?;
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
             let _stream_read = stream.next().ok_or("client should send this stream")??;
             let mut client_data = String::new();
             stream_write.read_to_string(&mut client_data)?;
-            std::fs::write(&file.trim(), client_data)?;
+            std::fs::write(&file, client_data)?;
         } else {
             let mut process = Command::new("fish")
                 .arg("-c")
@@ -65,8 +65,8 @@ fn main() -> Result<()> {
                 .stderr(Stdio::piped())
                 .spawn()?;
 
-            let mut stdout = process.stdout.take().unwrap();
-            let mut stderr = process.stderr.take().unwrap();
+            let mut stdout = process.stdout.take().expect("stdout is piped");
+            let mut stderr = process.stderr.take().expect("stderr is piped");
 
             let mut read_process_and_write_to_stream = || -> std::io::Result<bool> {
                 let stdout_n = stdout.read(&mut stdout_buf)?;
