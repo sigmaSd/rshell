@@ -6,7 +6,9 @@ use std::net::TcpStream;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
-    let server = std::env::args().nth(1).expect("server address is required");
+    let server = std::env::args()
+        .nth(1)
+        .ok_or("server address is required")?;
     let mut rl = Editor::<()>::new();
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
