@@ -1,9 +1,11 @@
+use crossbeam_utils::thread;
 use itertools::Itertools;
 use std::{
     io::{Read, Write},
     net::TcpListener,
     path::Path,
     process::{Command, Stdio},
+    sync::mpsc,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -33,7 +35,6 @@ fn main() -> Result<()> {
     });
 
     let mut input = String::new();
-    let mut out_buf = [0; 512];
     // accept connections and process them serially
     let listener = listener.incoming().chunks(2);
     let mut listener = listener.into_iter();
@@ -87,18 +88,44 @@ fn main() -> Result<()> {
 
             let mut stdout = process.stdout.take().expect("stdout is piped");
             let mut stderr = process.stderr.take().expect("stderr is piped");
+            let (tx, rx) = mpsc::channel();
 
-            let mut read_process_and_write_to_stream =
-                |out: &mut dyn Read| -> std::io::Result<bool> {
+            let read_process_and_write_to_stream =
+                |out: &mut dyn Read, tx: mpsc::Sender<Vec<u8>>| -> std::io::Result<bool> {
+                    let mut out_buf = [0; 512];
                     let out_n = out.read(&mut out_buf)?;
                     if out_n != 0 {
-                        stream_read.write_all(&out_buf[..out_n])?;
+                        tx.send(out_buf[..out_n].to_vec()).map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "failed to send data to write thread",
+                            )
+                        })?;
                     }
                     Ok(out_n == 0)
                 };
 
-            while let Ok(false) = read_process_and_write_to_stream(&mut stdout) {}
-            while let Ok(false) = read_process_and_write_to_stream(&mut stderr) {}
+            thread::scope(move |s| {
+                let tx_c = tx.clone();
+                s.spawn(move |_| {
+                    while let Ok(false) =
+                        read_process_and_write_to_stream(&mut stdout, tx_c.clone())
+                    {
+                    }
+                });
+                s.spawn(move |_| {
+                    while let Ok(false) = read_process_and_write_to_stream(&mut stderr, tx.clone())
+                    {
+                    }
+                });
+                s.spawn(move |_| -> std::io::Result<()> {
+                    while let Ok(data) = rx.recv() {
+                        stream_read.write_all(&data)?;
+                    }
+                    Ok(())
+                });
+            })
+            .map_err(|e| format!("read/write threads failed {:?}", e))?;
         }
 
         input.clear();
