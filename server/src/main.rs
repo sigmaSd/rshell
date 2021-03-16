@@ -23,10 +23,8 @@ fn main() -> Result<()> {
             Some(s) => s,
             None => break Ok(()),
         };
-        let stream_write = stream.next().ok_or("client should send this stream")?;
-        let stream_read = stream.next().ok_or("client should send this stream")?;
-        let mut stream_write = stream_write?;
-        let mut stream_read = stream_read?;
+        let mut stream_write = stream.next().ok_or("client should send this stream")??;
+        let mut stream_read = stream.next().ok_or("client should send this stream")??;
         stream_write.read_to_string(&mut input)?;
 
         dbg!(&input);
@@ -43,12 +41,15 @@ fn main() -> Result<()> {
                 .ok_or("Could not read filename")?
                 .to_str()
                 .ok_or("Could not read filename")?;
+
             let data = std::fs::read_to_string(&file).unwrap_or_default();
+
             stream_read.write_all(b"?vim")?;
             stream_read.flush()?;
             stream_read.write_all(file_name.as_bytes())?;
             stream_read.write_all(b"???")?;
             stream_read.write_all(data.as_bytes())?;
+
             drop(stream_read);
             // get result
             let mut stream = listener.next().ok_or("client should send this stream")?;
